@@ -114,6 +114,3 @@ This repository was created as the final deliverable for the course term project
 * The base mathematical formulation of SSMs is inspired by *Mamba: Linear-Time Sequence Modeling with Selective State Spaces* (Gu & Dao, 2023).
 * The dataset utilized is *LLVIP: A Visible-infrared Paired Dataset for Low-light Vision* (Jia et al., 2021).
 
-```
-
-```
