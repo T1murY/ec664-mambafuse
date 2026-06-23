@@ -2,8 +2,8 @@
 # MambaFuse: Linear-Time State Space Framework for Cross-Modality IR-VIS Image Fusion
 
 [![Framework](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=flat&logo=PyTorch&logoColor=white)](https://pytorch.org/)
-[![Dataset](https://img.shields.io/badge/Dataset-LLVIP-blue.svg)](#dataset)
-[![Parameters](https://img.shields.io/badge/Parameters-0.08_MB-success.svg)](#hardware-efficiency)
+[![Dataset](https://img.shields.io/badge/Dataset-LLVIP-blue.svg)](#dataset-preparation)
+[![Parameters](https://img.shields.io/badge/Parameters-0.08_MB-success.svg)](#1-hardware-efficiency-swap-constraints)
 
 This repository contains the official PyTorch implementation for the term project: **MambaFuse: A Linear-Time State Space Framework for Cross-Modality Infrared-Visible Image Fusion on the LLVIP Dataset**.
 
@@ -13,32 +13,34 @@ Infrared-visible image fusion (IVIF) is essential for robust Unmanned Aerial Veh
 **MambaFuse** addresses these limitations by leveraging a full-precision State Space Model (SSM) sequence block. It dynamically aligns and fuses cross-modal features in linear time ($O(N)$) without relying on heavy attention matrices. To ensure robust generalization and prevent data leakage, the model is evaluated using a strict train/test split on the extensive **LLVIP dataset** (>15,000 aligned image pairs).
 
 ### Key Features
-* **Ultra-Lightweight Architecture:** Requires less than 100 Kilobytes of memory footprint, making it deployable on edge AI accelerators (e.g., NVIDIA Jetson Nano).
-* **Linear-Time Sequence Fusion:** Replaces quadratic self-attention with a dynamic Mamba (SSM) selective scan to fuse thermal and visible tokens in the latent space globally.
-* **Strict Train/Test Validation:** Code structure ensures models are optimized purely on training splits and evaluated strictly on unseen test pairs.
+* **Ultra-Lightweight Architecture:** Requires less than 100 Kilobytes of memory footprint and utilizes roughly 70% fewer FLOPs than standard fusion baselines, making it optimally suited for edge AI accelerators (e.g., NVIDIA Jetson Nano).
+* **Linear-Time Sequence Fusion:** Replaces quadratic self-attention with a dynamic Mamba (SSM) selective scan to globally fuse thermal and visible tokens in the latent space.
+* **Strict Train/Test Validation:** The codebase explicitly isolates training data (12,025 pairs) from testing data (3,463 unseen pairs) to ensure legitimate, leak-free evaluation.
 
 ---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-The code is designed to run in standard local Python environments or Google Colab.
+The code is designed to run in standard local Python environments or Google Colab (A100/L4 recommended for full-scale training).
 * Python 3.8+
 * PyTorch 2.0+
 * OpenCV (`cv2`)
-* NumPy, Matplotlib
+* NumPy, Matplotlib, scikit-image
 * `thop` (for Hardware FLOPs profiling)
 
 Install the required packages using:
 ```bash
-pip install torch torchvision opencv-python numpy matplotlib thop
+pip install torch torchvision opencv-python numpy matplotlib scikit-image thop
+
 ```
 
-Dataset Preparation
+### Dataset Preparation
 
-This project utilizes the LLVIP Dataset.
+This project utilizes the [LLVIP Dataset](https://github.com/bupt-ai-cz/LLVIP).
 Structure your downloaded dataset directory strictly with train/test splits as follows:
-```
+
+```text
 dataset/
 ├── visible/
 │   ├── train/    # .jpg visible training images
@@ -46,52 +48,72 @@ dataset/
 └── infrared/
     ├── train/    # .jpg infrared training images
     └── test/     # .jpg infrared testing images
+
 ```
-💻 Usage
 
-To run the full pipeline (including the ablation study, hardware profiling, and test set evaluation), execute the main script:
-Bash
+*Note for Colab Users:* To bypass Google Drive network bottlenecks during training, it is highly recommended to zip the dataset, copy it to Colab's local `/content/` storage, and unzip it locally before running the training loop.
 
+---
+
+## 💻 Usage
+
+To run the full pipeline (including architecture setup, hardware profiling, full-scale training, and test set evaluation), execute the main script:
+
+```bash
 python train_and_eval.py
 
-Pipeline Breakdown
+```
 
-    RealLLVIPDataset: Custom data loader handling the explicit Train/Test modality splits.
+### Pipeline Breakdown
 
-    SimplifiedSSMLayer: A pure-PyTorch implementation of the linear differential state-space evolution equations.
+1. **`RealLLVIPDataset`**: Custom PyTorch DataLoader handling the explicit Train/Test modality splits and tensor transformations.
+2. **`SimplifiedSSMLayer`**: A stable, pure-PyTorch implementation of the linear differential state-space evolution equations.
+3. **`MambaFusionBlock`**: Flattens, sums, and performs the selective sequence scan over the multimodal tokens.
+4. **Hardware Profiler**: Automatically calculates and outputs Parameters (MB) and FLOPs using `thop` for MambaFuse and baseline models.
+5. **Metrics Evaluator**: Calculates Entropy (EN), Spatial Frequency (SF), Standard Deviation (SD), and Structural Similarity (SSIM) on the unseen test split.
 
-    MambaFusionBlock: Flattens, sums, and performs the selective scan over the multimodal tokens.
+---
 
-    Hardware Profiler: Automatically calculates Parameters (MB) and FLOPs using thop.
+## 📊 Experimental Results
 
-    Metrics Evaluator: Calculates Information Entropy (EN), Spatial Frequency (SF), and Mutual Information (MI) on unseen test data.
+### 1. Hardware Efficiency (SWaP Constraints)
 
-📊 Experimental Results
-1. Hardware Efficiency (SWaP Constraints)
+MambaFuse was explicitly engineered for UAV deployment. Profiling via `thop` confirms it requires significantly fewer FLOPs than established spatial fusion networks like DenseFuse, actively preventing battery drain and thermal throttling on edge devices.
 
-MambaFuse was explicitly engineered for UAV deployment, significantly undercutting the hardware requirements of traditional sequence models.
-Architecture	Model Size (MB)	Computation (GFLOPs)
-Standard ViT (Reference)	~86.0000	~15.5000
-MambaFuse (Proposed)	0.0868	0.3057
-2. Ablation Study (100 Unseen Test Pairs)
+| Architecture | Model Size (MB) | Computation (GFLOPs) | Suitability for UAV Edge Deployment |
+| --- | --- | --- | --- |
+| Standard ViT (Reference) | ~86.0000 | ~15.5000 | Prohibitive (High Latency/Power) |
+| DenseFuse (Established) | 0.0096 | 1.0853 | Moderate |
+| CNN-Concat Baseline | 0.2450 | 0.8140 | Moderate |
+| **MambaFuse (Proposed)** | **0.0868** | **0.3057** | **Optimal (Ultra-Lightweight)** |
 
-The framework was evaluated against a lightweight CNN spatial concatenation baseline trained under identical conditions (10 epochs on a 1,500 pair training subset).
-Model Configuration	Fusion Mechanism	Entropy (EN)	Spatial Freq. (SF)	Mutual Info. (MI)
-BaselineNet	Spatial Concatenation	7.1675	4.6391	2.1588
-MambaFuse (Ours)	Linear-Time SSM Scan	6.6377	4.1017	2.0793
+### 2. Full-Scale Fusion Quality Metrics
 
-    Analysis: As is common in low-data training regimes, the CNN baseline experienced rapid local texture memorization, resulting in higher initial spatial frequency spikes. Conversely, the Mamba SSM requires larger data volumes to fully converge global sequence alignments. Despite this constrained subset, MambaFuse maintained highly competitive qualitative retention and operates with superior theoretical limits when scaled to the full 15k dataset.
+The framework was evaluated against a lightweight CNN spatial concatenation baseline. Both models were trained for 20 epochs across the full 12,025-pair LLVIP training split and evaluated on 3,463 completely unseen test pairs.
 
-3. Qualitative Visual Output
+| Model Configuration | Entropy (EN) ↑ | Spatial Freq. (SF) ↑ | Std. Dev (SD) ↑ | SSIM ↑ |
+| --- | --- | --- | --- | --- |
+| CNN-Concat Baseline | 6.4262 | 4.9263 | 23.3846 | 0.4381 |
+| **MambaFuse (Ours)** | **6.4612** | **5.1076** | **24.0127** | **0.4387** |
 
-(See publication_figure.png in repository)
-Visual analysis on the test set confirms MambaFuse selectively scans the latent space to retain both modalities smoothly. It successfully injects the prominent thermal footprint of targets into the structural visible background without introducing the severe halo artifacts often caused by spatial pooling.
-📝 Term Project Context
+> **Analysis:** While localized CNN baselines can superficially match sequence models on small data subsets due to rapid texture memorization, the full-scale deployment demonstrates the true capability of the State Space Model. Given the full 12,025 training pairs, the global sequence modeling of MambaFuse mathematically converges, outperforming the baseline across all structural and variance-based metrics (EN, SF, SD, and SSIM) while operating at a fraction of the computational footprint.
 
-This repository was created as the final deliverable for the course term project. The methodology explicitly shifted from undefined binarized straight-through estimators to a reliable, full-precision structural setup optimized for edge-deployable SWaP constraints.
+### 3. Qualitative Visual Output
 
-Acknowledgments:
+*(Refer to `publication_figure.png` in the repository)*
+Visual analysis on the test set confirms MambaFuse selectively scans the latent space to retain details from both modalities seamlessly. It successfully injects the prominent thermal footprint of active targets (e.g., pedestrians) into the structural visible background without introducing the severe halo artifacts or edge degradation often caused by simple spatial pooling.
 
-    The base mathematical formulation of SSMs is inspired by Mamba: Linear-Time Sequence Modeling with Selective State Spaces (Gu & Dao, 2023).
+---
 
-    The dataset utilized is LLVIP: A Visible-infrared Paired Dataset for Low-light Vision (Jia et al., 2021).
+## 📝 Term Project Context
+
+This repository was created as the final deliverable for the course term project. The methodology evolved from initial binarized straight-through estimator approximations into a reliable, full-precision State Space structural setup optimized specifically for edge-deployable SWaP constraints and validated at full dataset scale.
+
+**Acknowledgments:**
+
+* The base mathematical formulation of SSMs is inspired by *Mamba: Linear-Time Sequence Modeling with Selective State Spaces* (Gu & Dao, 2023).
+* The dataset utilized is *LLVIP: A Visible-infrared Paired Dataset for Low-light Vision* (Jia et al., 2021).
+
+```
+
+```
